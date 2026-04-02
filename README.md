@@ -1,70 +1,151 @@
 # Brain Tumor MRI Assistant
 
-这是一个面向脑肿瘤 MRI 场景的证据增强问答助手。当前版本已经从 OpenAI 托管 `file_search` 架构切换为“本地 RAG + Yunwu/OpenAI-compatible Responses API 生成”，也就是：
+> A local RAG system for evidence-grounded brain tumor MRI Q&A, built with FastAPI, Streamlit, BM25 retrieval, and Yunwu/OpenAI-compatible Responses API.
 
-- 文档解析、切分、建索引、检索都在本地完成
-- Yunwu 只负责 query rewrite 和最终答案生成
-- 前端展示结构化回答、证据引用和检索片段
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
+![Streamlit](https://img.shields.io/badge/Streamlit-Frontend-FF4B4B)
+![RAG](https://img.shields.io/badge/RAG-Local%20BM25-6C63FF)
+![Provider](https://img.shields.io/badge/Provider-Yunwu%20%2F%20OpenAI--compatible-4F46E5)
 
-## 当前架构
+一个面向脑肿瘤 MRI 场景的证据增强问答助手。当前版本聚焦于“文档入库 -> 本地检索 -> 大模型生成 -> 证据展示 -> 结构化输出”这一条主链路，适合作为医学影像 RAG、医学 AI 工程实践、以及本地知识库问答系统的学习和演示项目。
 
-```text
-教材 / 综述 / 论文 PDF / DOCX / Markdown
-                |
-                v
-      本地文档解析与切分
-                |
-                v
-        本地 BM25 索引检索
-                |
-                v
- FastAPI 组装 prompt + 证据 + 会话上下文
-                |
-                v
-   Yunwu / OpenAI-compatible Responses API
-                |
-                v
-      结构化答案 + 证据引用 + 检索片段
-                |
-                v
-             Streamlit
+本项目已经从 OpenAI 托管 `file_search` 架构切换为“本地 RAG + Yunwu/OpenAI-compatible Responses API”方案：
+
+- 文档解析、切分、索引、检索全部在本地完成
+- Yunwu 负责 query rewrite、回答生成和结构化输出
+- 前端展示回答摘要、关键点、证据引用和检索片段
+
+## Why This Project
+
+很多医学 AI Demo 很容易停留在“纯聊天”层面，但真实可用的医学问答系统必须解决几个工程问题：
+
+- 回答必须尽量绑定证据，而不是只靠模型记忆
+- 文档来源需要可管理、可追踪、可复现
+- 检索链路、提示词链路、结构化输出链路要能拆开调试
+- 面对第三方兼容 API 时，架构需要有可迁移性和可降级能力
+
+这个项目的价值，不只是“能回答问题”，更在于它把一个医学 RAG 系统拆成了清晰、可维护、可扩展的工程模块，便于继续演化到 embedding、hybrid retrieval、reranker、评测集、甚至更复杂的多阶段临床问答系统。
+
+## Core Features
+
+- 本地知识库构建：支持扫描本地文档目录，生成 manifest 和本地稀疏索引
+- 本地 BM25 检索：不依赖托管 `vector_store`，便于深入理解 RAG 内部机制
+- 多文档格式支持：当前重点支持 PDF、DOCX、Markdown、TXT 等文本型资料
+- 文献采集工具：支持 PubMed + OpenAlex 的安全版候选检索与开放获取下载
+- Structured Outputs：统一约束问答输出字段，便于前端展示和接口集成
+- 会话管理：支持多轮问答与 `session_id` 级别的上下文持久化
+- 降级策略：当兼容平台无法稳定返回严格 JSON 时，可回退到自由文本生成并包装成统一结构
+- 可观测文件状态：`manifest.json`、`local_index.json`、`storage/sessions/*.json` 便于调试和复现
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    A["Brain tumor MRI documents"] --> B["Local parsing and cleaning"]
+    B --> C["Chunking and manifest build"]
+    C --> D["Local BM25 index"]
+    D --> E["FastAPI QA service"]
+    E --> F["Query rewrite"]
+    F --> G["Top-k local retrieval"]
+    G --> H["Prompt assembly with evidence"]
+    H --> I["Yunwu / OpenAI-compatible Responses API"]
+    I --> J["Structured answer + citations + fallback"]
+    J --> K["Streamlit UI"]
 ```
 
-## 为什么改成本地 RAG
+## End-to-End Workflow
 
-Yunwu 可以兼容基础 `Responses API` 和 function calling，但你这版项目真正依赖的托管能力是：
+当用户在前端输入一个问题后，系统按下面的顺序工作：
 
-- `Files API`
-- `vector_store`
-- `file_search`
+1. Streamlit 前端将问题发送到 FastAPI 的 `/api/qa`
+2. 后端读取 `session_id`，恢复多轮会话上下文
+3. 问答服务对原始问题进行 query rewrite，生成更利于检索的中英检索式
+4. 本地 BM25 检索从知识库中召回 top-k 片段
+5. 系统把问题、检索片段、引用信息、会话上下文拼接成提示词
+6. Yunwu/OpenAI-compatible Responses API 基于证据生成回答
+7. 应用层校验结构化输出；若失败，则走自由文本降级包装
+8. 前端展示摘要、关键点、证据引用、本地检索片段、局限性与建议追问
 
-探针测试已经证明这些平台能力在 Yunwu 上不稳定或不可用，所以当前版本改为：
+如果你希望完整理解每一步的数据结构、函数调用栈和实现细节，请直接阅读：
 
-- 本地自己做解析、切分、索引、检索
-- 兼容接口只做生成
+- [docs/LOCAL_RAG_TECHNICAL_GUIDE.md](docs/LOCAL_RAG_TECHNICAL_GUIDE.md)
 
-这样既能继续用 Yunwu，也更适合你自己深入理解 RAG 的实际实现方式。
+## Demo
 
-## 核心模块
+`demo/` 目录用于存放 README 展示截图和演示素材。
 
-- `src/bmagent_rag/local_rag.py`
-  - 文档读取、文本清洗、chunk 切分、本地 BM25 检索
-- `src/bmagent_rag/sync.py`
-  - 扫描本地知识库、计算 SHA256、重建本地索引、写 manifest
-- `src/bmagent_rag/qa_service.py`
-  - query rewrite、检索、拼接证据、调用 Yunwu 生成结构化答案
-- `src/bmagent_rag/qa_api.py`
-  - FastAPI 接口
-- `frontend/streamlit_app.py`
-  - 演示前端
-- `src/bmagent_rag/literature.py`
-  - 安全版文献候选采集与 OA 下载
-- `src/bmagent_rag/provider_probe.py`
-  - OpenAI-compatible 平台能力探针
+### Home / Query Page
 
-## 快速开始
+![Demo Home](demo/demo_1.jpg)
 
-建议使用 Python 3.11：
+### Result / Evidence View
+
+![Demo Result](demo/demo_2.jpg)
+
+这些截图展示了当前版本的两个核心使用场景：
+
+- 用户输入脑肿瘤 MRI 相关问题后的主界面体验
+- 回答摘要、关键点、证据引用与本地检索片段的结果展示
+
+## Project Goals
+
+第一版项目目标是一个“脑肿瘤 MRI 证据增强问答助手”，重点回答这类问题：
+
+- 某种脑肿瘤在 MRI 上的典型表现是什么
+- 两类脑肿瘤如何做影像鉴别
+- 某种 MRI 序列在脑肿瘤中的意义是什么
+- 某篇论文或教材章节的核心内容是什么
+
+当前版本优先保证：
+
+- 主链路可运行
+- 检索结果可解释
+- 证据来源可展示
+- 输出结构可约束
+
+## Non-Goals for V1
+
+为了先把主链路做稳，当前版本暂不追求：
+
+- 自动联网抓取全部最新文献
+- 自建复杂多 agent 编排
+- 影像分割、配准、病灶检测等图像处理能力
+- 自动给出诊断结论或临床决策建议
+- 替代放射科医师、神经肿瘤团队或病理结果
+
+## Tech Stack
+
+- Python 3.11
+- FastAPI
+- Streamlit
+- Pydantic
+- PyPDF / 文本解析
+- 本地 BM25 检索
+- Yunwu / OpenAI-compatible Responses API
+- Pytest
+
+## Repository Structure
+
+```text
+app/                      FastAPI 入口
+frontend/                 Streamlit 前端
+src/bmagent_rag/          核心业务逻辑
+  local_rag.py            文档解析、切分、BM25 检索
+  sync.py                 知识库同步与索引构建
+  qa_service.py           问答编排主链路
+  qa_api.py               问答接口
+  literature.py           文献候选检索与 OA 下载
+  provider_probe.py       OpenAI-compatible 能力探测
+scripts/                  命令行脚本
+tests/                    测试
+docs/                     技术文档
+demo/                     README 演示图片与素材
+```
+
+## Quick Start
+
+### 1. Create Environment
 
 ```powershell
 py -3.11 -m venv .venv
@@ -73,7 +154,9 @@ py -3.11 -m pip install -e .[dev]
 Copy-Item .env.example .env
 ```
 
-`.env` 最小配置示例：
+### 2. Configure Environment Variables
+
+最小配置示例：
 
 ```env
 OPENAI_API_KEY=你的 Yunwu 新密钥
@@ -95,61 +178,41 @@ OPENALEX_MAILTO=
 NCBI_API_KEY=
 ```
 
-注意：
+## Build the Local Knowledge Base
 
-- 不要继续使用之前泄露过的旧密钥，应当先在 Yunwu 后台撤销并重建。
-- `OPENAI_BASE_URL` 指向 Yunwu 的 OpenAI-compatible 地址，例如 `https://yunwu.ai/v1`。
-- 当前版本不再依赖 `OPENAI_VECTOR_STORE_ID`。
+把教材、综述、核心论文放进：
 
-## 本地知识库准备
+```text
+data/knowledge_base/source
+```
 
-把资料放到 `data/knowledge_base/source`。推荐先放：
-
-- 1 本脑肿瘤 MRI 教材
-- 3 到 5 篇高质量综述
-- 5 到 10 篇核心论文
-
-支持的常见格式：
-
-- `.pdf`
-- `.docx`
-- `.txt`
-- `.md`
-- `.html`
-- `.csv`
-- `.json`
-
-## 构建本地索引
+然后运行：
 
 ```powershell
 py -3.11 scripts\sync_knowledge_base.py --dry-run
 py -3.11 scripts\sync_knowledge_base.py
 ```
 
-这一步会完成：
+执行完成后，关键产物会写入：
 
-- 扫描文档目录
-- 计算文件哈希
-- 提取文本
-- 按字符窗口切 chunk
-- 建立本地 BM25 索引
-- 写入 `manifest.json` 和 `local_index.json`
+- `data/knowledge_base/state/manifest.json`
+- `data/knowledge_base/state/local_index.json`
 
-## 启动后端与前端
+## Start the Application
 
-启动 FastAPI：
+启动后端：
 
 ```powershell
 uvicorn app.main:app --reload
 ```
 
-启动 Streamlit：
+启动前端：
 
 ```powershell
 streamlit run frontend/streamlit_app.py
 ```
 
-## 主要接口
+## API Endpoints
 
 - `GET /api/healthz`
 - `POST /api/sessions`
@@ -158,58 +221,108 @@ streamlit run frontend/streamlit_app.py
 - `POST /api/kb/sync`
 - `POST /api/qa`
 
-## 安全版文献采集
+## Literature Collection Workflow
 
-先拉候选元数据，不直接抓付费全文：
+项目内置了一个“安全版文献采集”流程：
+
+- 先从 PubMed 拉候选文献元数据
+- 再用 OpenAlex 补充开放获取状态
+- 只在用户显式开启下载时下载 OA PDF
+- 不抓付费墙，不依赖反爬，不绕过版权限制
+
+示例：
 
 ```powershell
 py -3.11 scripts\search_literature_candidates.py "glioblastoma MRI review" --max-results 20 --from-year 2020 --reviews-only
 ```
 
-如果候选结果合适，再只下载开放获取 PDF：
+下载开放获取 PDF：
 
 ```powershell
 py -3.11 scripts\search_literature_candidates.py "glioblastoma MRI review" --max-results 20 --from-year 2020 --reviews-only --download-open-access
 ```
 
-## 平台兼容性探针
+## Provider Compatibility
 
-如果你想继续测试某个 OpenAI-compatible 服务到底支持到哪一层：
+项目提供了一个平台能力探针，用来测试兼容服务是否真的支持完整 OpenAI 风格能力：
 
 ```powershell
 py -3.11 scripts\probe_provider_compat.py --base-url "https://yunwu.ai/v1" --model "gpt-4.1"
 ```
 
-这个探针会检查：
+它会按顺序检测：
 
-- 基础 `Responses API`
+- `Responses API`
 - `Files API`
 - `vector_store`
 - `file_search`
 
-当前经验结论是：Yunwu 更适合做生成，不适合承担托管 RAG 平台能力。
+这也是本项目从托管 `file_search` 转向本地 RAG 的关键工程背景之一。
 
-## 你现在可以重点研究的 RAG 环节
-
-如果你的目标是顺着项目把 RAG 学透，建议按下面顺序读代码：
-
-1. `src/bmagent_rag/local_rag.py`
-   - 看文本如何被切成 chunk
-   - 看 BM25 如何给片段打分
-2. `src/bmagent_rag/sync.py`
-   - 看知识库如何扫描、去重、重建本地索引
-3. `src/bmagent_rag/qa_service.py`
-   - 看 query rewrite、检索、prompt 组装、结构化回答是怎么串起来的
-4. `frontend/streamlit_app.py`
-   - 看答案、证据、检索片段如何展示给用户
-
-## 已验证状态
-
-本地回归已通过：
+## Validation
 
 ```powershell
 py -3.11 -m pytest
 py -3.11 -m compileall app frontend scripts src tests
 ```
 
-当前测试结果：`16 passed`
+## Documentation
+
+- [LOCAL_RAG_TECHNICAL_GUIDE.md](docs/LOCAL_RAG_TECHNICAL_GUIDE.md)
+
+如果你要准备答辩、面试、技术分享，建议优先阅读这份文档。它会把：
+
+- 文献检索与下载
+- PDF 解析
+- chunk 切分
+- BM25 召回
+- top-k 计算
+- 提示词拼接
+- Structured Outputs
+- 降级策略
+- 会话管理
+- 调试与优化方向
+
+这些内容都串成一条完整工程链路。
+
+## Current Limitations
+
+- 当前默认检索是本地 BM25，不是 embedding 向量检索
+- PDF 文本抽取质量受源文件质量影响较大
+- 第三方 OpenAI-compatible 平台对严格结构化输出的兼容性不完全一致
+- 回答质量依赖知识库覆盖范围和文档质量
+
+## Roadmap
+
+- 接入 embedding 检索与 hybrid retrieval
+- 增加 reranker 提升召回排序质量
+- 增加 OCR 流程支持扫描版 PDF
+- 引入标准评测集与自动评估脚本
+- 增加更细粒度的结构化日志与 tracing
+- 支持更强的引用定位与证据可视化
+
+## Safety Notice
+
+本项目仅用于医学影像信息整理、文献证据辅助和工程研究演示，不构成医学诊断、治疗建议或临床决策依据。
+
+任何与患者诊疗相关的判断，都应由放射科医师、神经肿瘤团队、病理结果和正式临床流程共同决定。
+
+## Contributing
+
+欢迎你基于这个项目继续做：
+
+- 脑肿瘤 MRI 知识库扩充
+- 检索策略优化
+- Prompt 工程优化
+- 前端交互升级
+- 评测集建设
+- 医学问答质量分析
+
+如果你希望把它进一步做成一个更完整的开源项目，下一步最值得补的是：
+
+- 演示截图
+- GitHub Actions
+- License
+- Issue 模板
+- PR 模板
+- 评测与 benchmark 文档
