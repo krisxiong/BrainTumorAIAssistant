@@ -88,31 +88,6 @@ flowchart TD
 - 用户输入脑肿瘤 MRI 相关问题后的主界面体验
 - 回答摘要、关键点、证据引用与本地检索片段的结果展示
 
-## Project Goals
-
-第一版项目目标是一个“脑肿瘤 MRI 证据增强问答助手”，重点回答这类问题：
-
-- 某种脑肿瘤在 MRI 上的典型表现是什么
-- 两类脑肿瘤如何做影像鉴别
-- 某种 MRI 序列在脑肿瘤中的意义是什么
-- 某篇论文或教材章节的核心内容是什么
-
-当前版本优先保证：
-
-- 主链路可运行
-- 检索结果可解释
-- 证据来源可展示
-- 输出结构可约束
-
-## Non-Goals for V1
-
-为了先把主链路做稳，当前版本暂不追求：
-
-- 自动联网抓取全部最新文献
-- 自建复杂多 agent 编排
-- 影像分割、配准、病灶检测等图像处理能力
-- 自动给出诊断结论或临床决策建议
-- 替代放射科医师、神经肿瘤团队或病理结果
 
 ## Tech Stack
 
@@ -159,9 +134,9 @@ Copy-Item .env.example .env
 最小配置示例：
 
 ```env
-OPENAI_API_KEY=你的 Yunwu 新密钥
-OPENAI_BASE_URL=https://yunwu.ai/v1
-OPENAI_MODEL=gpt-4.1
+OPENAI_API_KEY=yourapi
+OPENAI_BASE_URL=yoururl
+OPENAI_MODEL=yourmodel
 OPENAI_REASONING_EFFORT=medium
 OPENAI_TEXT_VERBOSITY=low
 OPENAI_MAX_OUTPUT_TOKENS=1400
@@ -257,7 +232,6 @@ py -3.11 scripts\probe_provider_compat.py --base-url "https://yunwu.ai/v1" --mod
 - `vector_store`
 - `file_search`
 
-这也是本项目从托管 `file_search` 转向本地 RAG 的关键工程背景之一。
 
 ## Validation
 
@@ -266,24 +240,6 @@ py -3.11 -m pytest
 py -3.11 -m compileall app frontend scripts src tests
 ```
 
-## Documentation
-
-- [LOCAL_RAG_TECHNICAL_GUIDE.md](docs/LOCAL_RAG_TECHNICAL_GUIDE.md)
-
-如果你要准备答辩、面试、技术分享，建议优先阅读这份文档。它会把：
-
-- 文献检索与下载
-- PDF 解析
-- chunk 切分
-- BM25 召回
-- top-k 计算
-- 提示词拼接
-- Structured Outputs
-- 降级策略
-- 会话管理
-- 调试与优化方向
-
-这些内容都串成一条完整工程链路。
 
 ## Current Limitations
 
@@ -307,22 +263,3 @@ py -3.11 -m compileall app frontend scripts src tests
 
 任何与患者诊疗相关的判断，都应由放射科医师、神经肿瘤团队、病理结果和正式临床流程共同决定。
 
-## Contributing
-
-欢迎你基于这个项目继续做：
-
-- 脑肿瘤 MRI 知识库扩充
-- 检索策略优化
-- Prompt 工程优化
-- 前端交互升级
-- 评测集建设
-- 医学问答质量分析
-
-如果你希望把它进一步做成一个更完整的开源项目，下一步最值得补的是：
-
-- 演示截图
-- GitHub Actions
-- License
-- Issue 模板
-- PR 模板
-- 评测与 benchmark 文档
