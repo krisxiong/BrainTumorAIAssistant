@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brain-tumor-mri-assistant"
+version = "0.2.0"
+description = "Local-RAG brain tumor MRI assistant using an OpenAI-compatible generation provider."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110,<1.0",
+  "openai>=1.40.0",
+  "pydantic>=2.8,<3.0",
+  "pydantic-settings>=2.4,<3.0",
+  "python-dotenv>=1.0,<2.0",
+  "requests>=2.31,<3.0",
+  "streamlit>=1.35,<2.0",
+  "uvicorn[standard]>=0.30,<1.0",
+  "pypdf>=5.0,<6.0",
+  "python-docx>=1.1,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27,<1.0",
+  "pytest>=8.0,<9.0",
+]
+
+[project.scripts]
+bmagent-kb-sync = "bmagent_rag.cli:main"
+bmagent-literature-search = "bmagent_rag.literature:main"
+bmagent-provider-probe = "bmagent_rag.provider_probe:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
