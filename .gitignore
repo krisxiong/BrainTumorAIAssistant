@@ -13,3 +13,5 @@ data/
 knowledge_base/
 
 *.log
+private_docs/
+private_docs.rar
